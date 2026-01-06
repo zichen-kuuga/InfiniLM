@@ -172,7 +172,7 @@ class InfiniEngine:
 
         if use_tqdm:
             pbar.close()
-        self.model_runner.exit()
+        # self.model_runner.exit()
         return (
             outputs,
             avg_prefill_throughput,

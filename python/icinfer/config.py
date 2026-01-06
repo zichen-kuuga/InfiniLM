@@ -14,7 +14,7 @@ class Config:
     enforce_eager: bool = False
     hf_config: AutoConfig | None = None
     eos: int = -1
-    kvcache_block_size: int = 16
+    kvcache_block_size: int = 64
     max_kvcache_tokens: int = -1
     num_kvcache_blocks: int = -1
     trust_remote_code: bool = False

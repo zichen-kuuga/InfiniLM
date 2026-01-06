@@ -1,5 +1,9 @@
 local INFINI_ROOT = os.getenv("INFINI_ROOT") or (os.getenv(is_host("windows") and "HOMEPATH" or "HOME") .. "/.infini")
 
+local MUSA_ROOT = os.getenv("MUSA_ROOT") or os.getenv("MUSA_HOME") or os.getenv("MUSA_PATH")
+add_includedirs(MUSA_ROOT .. "/include")
+add_linkdirs(MUSA_ROOT .. "/lib")
+
 target("infinicore_infer")
     set_kind("shared")
 
@@ -7,7 +11,7 @@ target("infinicore_infer")
     add_includedirs(INFINI_ROOT.."/include", { public = true })
 
     add_linkdirs(INFINI_ROOT.."/lib")
-    add_links("infiniop", "infinirt", "infiniccl")
+    add_links("infiniop", "infinirt", "infiniccl", "attention")
 
     set_languages("cxx17")
     set_warnings("all", "error")

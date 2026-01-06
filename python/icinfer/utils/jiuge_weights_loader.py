@@ -452,19 +452,25 @@ def load_weights_to_cpu(
         )
     elif "fm9g7b" == hf_config.model_type:
         logger.info(f"fm9g7b load start.")
-        model = transformers.AutoModelForCausalLM.from_pretrained(
-            model_dir_path,
-            device_map="cpu",
-            torch_dtype=torch.bfloat16,
-            trust_remote_code=True,
+
+        state_dict = torch.load(
+            os.path.join(model_dir_path, "pytorch_model.bin"),
+            weights_only=True,
+            map_location="cpu",
         )
+        # model = transformers.AutoModelForCausalLM.from_pretrained(
+        #     model_dir_path,
+        #     device_map="cpu",
+        #     torch_dtype=torch.bfloat16,
+        #     trust_remote_code=True,
+        # )
         logger.info(f"load over.")
         load_statets_time = time.time()
         meta = JiugeMetaFromLlama(hf_config, max_tokens=max_tokens)
         weights = JiugeWeightsImpl(
             meta,
             LlamaWeightsNaming(),
-            model.state_dict(),
+            state_dict,
             ndev=ndev,
             transpose_weight=transpose_weight,
         )

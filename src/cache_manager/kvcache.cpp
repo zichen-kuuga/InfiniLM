@@ -61,6 +61,20 @@ __C struct KVCache *createPagedKVCache(
             kcache.push_back(std::move(Tensor::buffer(dtype, shape)));
             vcache.push_back(std::move(Tensor::buffer(dtype, shape)));
         }
+
+        infinirtStream_t stream;
+        infinirtStreamCreate(&stream);
+        //仅支持float16
+        size_t cout = (max_num_blocks * nkvh * kvcache_block_size * dh) / 2;
+        std::vector<uint32_t> cache_cpu(cout, 0);
+
+        for (unsigned int layer = 0; layer < nlayers; layer++) {
+            RUN_INFINI(infinirtMemcpyAsync((uint32_t*)(kcache[layer]->data()), cache_cpu.data(), sizeof(uint32_t) * cout,
+                                                INFINIRT_MEMCPY_H2D, stream));
+            RUN_INFINI(infinirtMemcpyAsync((uint32_t*)(vcache[layer]->data()), cache_cpu.data(), sizeof(uint32_t) * cout,
+                                                INFINIRT_MEMCPY_H2D, stream));
+        }
+
         cache->k.push_back(kcache);
         cache->v.push_back(vcache);
     }

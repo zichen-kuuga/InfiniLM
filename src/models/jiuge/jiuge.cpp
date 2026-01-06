@@ -5,7 +5,8 @@
 #include "../../utils.hpp"
 #include "../inference_context.hpp"
 #include "infinicore_infer.h"
-
+#include "flashattention.h"
+#include <chrono>
 #include <random>
 #include <thread>
 #include <vector>
@@ -384,6 +385,27 @@ void inferDeviceBatchPaged(const JiugeMeta &meta, JiugeDeviceResource &rsrc,
                                        dsize(dt_logits) * d, INFINIRT_MEMCPY_D2D, stream));
     }
 
+    auto cu_seqlens_q_cpu = std::vector<int32_t>(nreq + 1);
+    auto cache_seqlens_int32_cpu = std::vector<int32_t>(nreq);
+
+    cu_seqlens_q_cpu[0] = 0;
+    for (uint32_t  i = 0; i < nreq; ++i) {
+        cu_seqlens_q_cpu[i+1] = cu_seqlens_q_cpu[i] + req_lens[i];
+        cache_seqlens_int32_cpu[i] = req_pos[i] + req_lens[i];
+    }
+
+    std::shared_ptr<Tensor> cu_seqlens_q, cache_seqlens_int32;
+    cu_seqlens_q = Tensor::buffer(INFINI_DTYPE_U32, {nreq + 1}, rsrc.memory_pool);
+    cache_seqlens_int32 = Tensor::buffer(INFINI_DTYPE_I32, {nreq}, rsrc.memory_pool);
+    RUN_INFINI(infinirtMemcpyAsync(cu_seqlens_q->data(), cu_seqlens_q_cpu.data(), sizeof(uint32_t) * (nreq + 1),
+                                       INFINIRT_MEMCPY_H2D, stream));
+    RUN_INFINI(infinirtMemcpyAsync(cache_seqlens_int32->data(), cache_seqlens_int32_cpu.data(), sizeof(uint32_t) * nreq,
+                                       INFINIRT_MEMCPY_H2D, stream));
+
+    std::shared_ptr<Tensor> mate_workspace_buffer, mtt_tasks;
+    mate_workspace_buffer = Tensor::buffer(INFINI_DTYPE_U8, {128 * 1024 * 1024}, rsrc.memory_pool);
+    mtt_tasks = Tensor::buffer(INFINI_DTYPE_U32, {16000}, rsrc.memory_pool);
+
     std::shared_ptr<Tensor> slot_mapping_buf, block_tables_buf, seq_lens_buf;
     size_t max_seq_len_in_batch = 0;
     if (enable_paged_attn) {
@@ -427,10 +449,9 @@ void inferDeviceBatchPaged(const JiugeMeta &meta, JiugeDeviceResource &rsrc,
 
     
     // MLP buffers
-    auto gate_buf = gate_up_buf->slice(1, 0, di);
-    auto up_buf = gate_up_buf->slice(1, di, di);
-
-
+    // auto gate_buf = gate_up_buf->slice(1, 0, di);
+    // auto up_buf = gate_up_buf->slice(1, di, di);
+    auto gate_buf = Tensor::buffer(dt_logits, {ntok, di}, rsrc.memory_pool);
     for (uint32_t layer = 0; layer < nlayer; layer++) {
         // 1. Attention
         // rms norm
@@ -456,34 +477,125 @@ void inferDeviceBatchPaged(const JiugeMeta &meta, JiugeDeviceResource &rsrc,
             pagedCaching(k, v, k_cache_pool, v_cache_pool, slot_mapping_buf);
 
             if (is_prefill) {
-                size_t token_offset = 0;
-                for (uint32_t req = 0; req < nreq; req++) {
-                    auto past_len = req_pos[req];
-                    auto seq_len = req_lens[req];
-                    auto total_len = past_len + seq_len;
-                    auto o = o_buf->slice({{0, token_offset, seq_len}})->view({seq_len, nkvh, ngroup, dh})->permute({1, 2, 0, 3});
-                    auto k = qkv_rope->slice({{0, token_offset, seq_len}, {1, nh, nkvh}});
-                    auto v = qkv_rope->slice({{0, token_offset, seq_len}, {1, nh + nkvh, nkvh}});
-                    auto q = qkv_rope->slice({{0, token_offset, seq_len}, {1, 0, nh}})->view({seq_len, nkvh, ngroup, dh})->permute({1, 2, 0, 3});
-                    rearrange(q_rearrange->slice(2, 0, seq_len), q);
-                    auto qk_gemm = qk_buf->slice(0, 0, nh * seq_len * total_len)->view({nkvh, ngroup * seq_len, total_len});
-                    auto k_gemm = k->permute({1, 2, 0});
-                    linear(qk_gemm, rearrange_q_buf->slice(1, 0, ngroup * seq_len), k_gemm, 1.f / float(sqrt(dh)), 0.f, nullptr, nullptr);
-                    auto qk_softmax = qk_gemm->view({nh, seq_len, total_len});
-                    causalSoftmax(qk_softmax, qk_softmax);
-                    auto v_gemm = v->permute({1, 0, 2});
-                    linear(attn_val_buf->slice(1, 0, ngroup * seq_len), qk_gemm, v_gemm, 1.f, 0.f, nullptr, nullptr);
-                    rearrange(o, attn_val_gemm->slice(2, 0, seq_len));
+                auto o = o_buf->slice({{0, 0, ntok}})->view({ntok, nh, dh});
+                auto q_batch = qkv_rope->slice({ {0, 0, ntok}, {1, 0, nh} })->view({ntok, nh, dh});
+                auto q_batch_rearrange = Tensor::buffer(dt_logits, {ntok, nh, dh}, rsrc.memory_pool);
+                rearrange(q_batch_rearrange, q_batch);
+                float scale = 1.f / float(sqrt(dh));
+                
+                // size_t token_offset = 0;
+                // for (uint32_t req = 0; req < nreq; req++) {
+                //     auto past_len = req_pos[req];
+                //     auto seq_len = req_lens[req];
+                //     auto total_len = past_len + seq_len;
+                //     auto o = o_buf->slice({{0, token_offset, seq_len}})->view({seq_len, nkvh, ngroup, dh})->permute({1, 2, 0, 3});
+                //     auto k = qkv_rope->slice({{0, token_offset, seq_len}, {1, nh, nkvh}});
+                //     auto v = qkv_rope->slice({{0, token_offset, seq_len}, {1, nh + nkvh, nkvh}});
+                //     auto q = qkv_rope->slice({{0, token_offset, seq_len}, {1, 0, nh}})->view({seq_len, nkvh, ngroup, dh})->permute({1, 2, 0, 3});
+                //     rearrange(q_rearrange->slice(2, 0, seq_len), q);
+                //     auto qk_gemm = qk_buf->slice(0, 0, nh * seq_len * total_len)->view({nkvh, ngroup * seq_len, total_len});
+                //     auto k_gemm = k->permute({1, 2, 0});
+                //     linear(qk_gemm, rearrange_q_buf->slice(1, 0, ngroup * seq_len), k_gemm, 1.f / float(sqrt(dh)), 0.f, nullptr, nullptr);
+                //     auto qk_softmax = qk_gemm->view({nh, seq_len, total_len});
+                //     causalSoftmax(qk_softmax, qk_softmax);
+                //     auto v_gemm = v->permute({1, 0, 2});
+                //     linear(attn_val_buf->slice(1, 0, ngroup * seq_len), qk_gemm, v_gemm, 1.f, 0.f, nullptr, nullptr);
+                //     rearrange(o, attn_val_gemm->slice(2, 0, seq_len));
 
-                    token_offset += seq_len;
+                //     token_offset += seq_len;
+                // }
+
+                if(layer == 0){
+                    get_paged_gqa_prefill_meta_graph_compatible(
+                        cu_seqlens_q->data(), 
+                        cache_seqlens_int32->data(), 
+                        block_tables_buf->data(),
+                        mtt_tasks->data(),
+                        stream,
+                        nreq,
+                        nh, 
+                        nkvh, 
+                        64
+                    );
                 }
+
+                std::vector<int32_t> size = {
+                    static_cast<int32_t>(q_batch_rearrange->shape()[0]), static_cast<int32_t>(q_batch_rearrange->shape()[1]), static_cast<int32_t>(q_batch_rearrange->shape()[2]), 
+                    static_cast<int32_t>(k_cache_pool->shape()[0]), static_cast<int32_t>(k_cache_pool->shape()[1]), static_cast<int32_t>(k_cache_pool->shape()[2]), 
+                    static_cast<int32_t>(o->shape()[2]), static_cast<int32_t>(block_tables_buf->shape()[0]), static_cast<int32_t>(block_tables_buf->shape()[1]), static_cast<int32_t>(mtt_tasks->shape()[0])
+                };
+            
+                std::vector<int32_t> stride = {
+                    static_cast<int32_t>(o->strides()[0]), static_cast<int32_t>(o->strides()[1]),
+                    static_cast<int32_t>(k_cache_pool->strides()[0]), static_cast<int32_t>(k_cache_pool->strides()[2]),
+                    static_cast<int32_t>(q_batch_rearrange->strides()[0]), static_cast<int32_t>(q_batch_rearrange->strides()[1]),
+                };
+
+                gqa_attn_prefill_with_kvcache(
+                    q_batch_rearrange->data(),
+                    k_cache_pool->data(),
+                    v_cache_pool->data(),
+                    block_tables_buf->data(),
+                    mtt_tasks->data(),
+                    true, 
+                    scale,
+                    o->data(),
+                    dh,
+                    size,
+                    stride,
+                    stream
+                );
             } else {
                 auto o = o_buf->slice({{0, 0, ntok}})->view({ntok, nh, dh});
                 auto q_batch = qkv_rope->slice({ {0, 0, ntok}, {1, 0, nh} })->view({ntok, nh, dh});
+                auto q_batch_rearrange = Tensor::buffer(dt_logits, {ntok, nh, dh}, rsrc.memory_pool);
+
+                rearrange(q_batch_rearrange, q_batch);
+
                 float scale = 1.f / float(sqrt(dh));
-                pagedAttention(o, q_batch, k_cache_pool, v_cache_pool, 
-                               block_tables_buf, seq_lens_buf, nullptr /* alibi_slopes */, scale);
-                               
+                // pagedAttention(o, q_batch, k_cache_pool, v_cache_pool, 
+                //                block_tables_buf, seq_lens_buf, nullptr /* alibi_slopes */, scale);
+                if(layer == 0){
+                    get_paged_gqa_decode_meta_graph_compatible(
+                        cu_seqlens_q->data(), 
+                        cache_seqlens_int32->data(), 
+                        block_tables_buf->data(),
+                        mtt_tasks->data(),
+                        stream,
+                        nreq,
+                        nh, 
+                        nkvh, 
+                        64
+                    );
+                }
+
+                std::vector<int32_t> size = {
+                    static_cast<int32_t>(q_batch_rearrange->shape()[0]), static_cast<int32_t>(q_batch_rearrange->shape()[1]), static_cast<int32_t>(q_batch_rearrange->shape()[2]), 
+                    static_cast<int32_t>(k_cache_pool->shape()[0]), static_cast<int32_t>(k_cache_pool->shape()[1]), static_cast<int32_t>(k_cache_pool->shape()[2]), 
+                    static_cast<int32_t>(o->shape()[2]), static_cast<int32_t>(block_tables_buf->shape()[0]), static_cast<int32_t>(block_tables_buf->shape()[1]), static_cast<int32_t>(mtt_tasks->shape()[0])
+                };
+
+                std::vector<int32_t> stride = {
+                    static_cast<int32_t>(o->strides()[0]), static_cast<int32_t>(o->strides()[1]),
+                    static_cast<int32_t>(k_cache_pool->strides()[0]), static_cast<int32_t>(k_cache_pool->strides()[2]),
+                    static_cast<int32_t>(q_batch_rearrange->strides()[0]), static_cast<int32_t>(q_batch_rearrange->strides()[1]),
+                };
+
+                gqa_attn_decode_with_kvcache(
+                    q_batch_rearrange->data(),
+                    k_cache_pool->data(),
+                    v_cache_pool->data(),
+                    block_tables_buf->data(),
+                    mtt_tasks->data(),
+                    mate_workspace_buffer->data(),
+                    true, 
+                    scale,
+                    o->data(),
+                    dh,
+                    size,
+                    stride,
+                    stream
+                );
                 
             }
 
@@ -532,7 +644,8 @@ void inferDeviceBatchPaged(const JiugeMeta &meta, JiugeDeviceResource &rsrc,
         // 2. FFN
         rmsnorm(logits_out, logits_in, rsrc.w_ffn_norm[layer], meta.epsilon);
         linear(gate_up_buf, logits_out, rsrc.w_ffn_gate_up[layer], 1.0, 0.0, nullptr, nullptr);
-        swiglu(gate_buf, up_buf, gate_buf);
+        // swiglu(gate_buf, up_buf, gate_buf);
+        swiglu(gate_buf, gate_up_buf, gate_buf);
         linear(logits_in, gate_buf, rsrc.w_ffn_down[layer], 1.0, 0.0, idev == 0 ? logits_in : nullptr, nullptr); // only rank 0 adds residual
 
         // All_reduce if distributed

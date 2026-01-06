@@ -76,6 +76,7 @@ def main():
         for _ in range(num_prompts)
     ]
 
+    _, _, _, _, _, _ = llm.generate(prompts, sampling_params)
     outputs, avg_prefill_throughput, avg_decode_throughput,  avg_ttft, avg_tbt, cache_efficiency = llm.generate(prompts, sampling_params)
 
     for prompt, output in zip(prompts, outputs):
