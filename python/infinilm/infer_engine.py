@@ -53,6 +53,9 @@ class InferEngine(_infinilm.InferEngine):
         self.use_cache = False
 
         self.enable_paged_attn = isinstance(cache_config, PagedKVCacheConfig)
+        self.mate_workspace_buffer = infinicore.from_list([0]*(128 * 1024 * 1024), dtype=infinicore.uint8)
+        # self.mtt_tasks = infinicore.from_list([0]*(16000), dtype=infinicore.uint32)
+        self.mtt_tasks = infinicore.from_list([0]*(16000), dtype=infinicore.int32)
 
     def __call__(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
@@ -67,6 +70,8 @@ class InferEngine(_infinilm.InferEngine):
         input_offsets=None,
         block_tables=None,
         slot_mapping=None,
+        mate_workspace_buffer=None,
+        mtt_tasks=None,
         temperature=None,
         top_k=None,
         top_p=None,
@@ -83,6 +88,8 @@ class InferEngine(_infinilm.InferEngine):
         input_offsets = input_offsets._underlying if input_offsets is not None else None
         block_tables = block_tables._underlying if block_tables is not None else None
         slot_mapping = slot_mapping._underlying if slot_mapping is not None else None
+        mate_workspace_buffer = mate_workspace_buffer._underlying if mate_workspace_buffer is not None else None
+        mtt_tasks = mtt_tasks._underlying if mtt_tasks is not None else None
 
         return infinicore.Tensor(
             super()
@@ -95,6 +102,8 @@ class InferEngine(_infinilm.InferEngine):
                     input_offsets=input_offsets,
                     block_tables=block_tables,
                     slot_mapping=slot_mapping,
+                    mate_workspace_buffer=mate_workspace_buffer,
+                    mtt_tasks=mtt_tasks,
                     temperature=temperature,
                     top_k=top_k,
                     top_p=top_p,
@@ -143,7 +152,7 @@ class InferEngine(_infinilm.InferEngine):
             ]
             block_tables = infinicore.from_list(
                 block_tables_list,
-                dtype=infinicore.int64,
+                dtype=infinicore.int32,
             )
 
         for iter in range(0, generation_config.max_new_tokens):
@@ -199,11 +208,12 @@ class InferEngine(_infinilm.InferEngine):
                 [past_seq_len] * batch_size, dtype=infinicore.int64
             )
             total_kv_lengths = infinicore.from_list(
-                [past_seq_len + seq_len] * batch_size, dtype=infinicore.int64
+                [past_seq_len + seq_len] * batch_size, dtype=infinicore.int32
             )
 
             input_offsets = infinicore.from_list(
-                [seq_len * i for i in range(batch_size + 1)], dtype=infinicore.int64
+                # [seq_len * i for i in range(batch_size + 1)], dtype=infinicore.uint32
+                [seq_len * i for i in range(batch_size + 1)], dtype=infinicore.int32
             )
 
             output_id = self(
@@ -214,6 +224,8 @@ class InferEngine(_infinilm.InferEngine):
                 input_offsets=input_offsets,
                 block_tables=block_tables,
                 slot_mapping=slot_mapping,
+                mate_workspace_buffer=self.mate_workspace_buffer,
+                mtt_tasks=self.mtt_tasks,
                 temperature=generation_config.temperature,
                 top_k=generation_config.top_k,
                 top_p=generation_config.top_p,

@@ -74,7 +74,9 @@ public:
             std::optional<infinicore::Tensor> total_sequence_lengths,
             std::optional<infinicore::Tensor> input_offsets,
             std::optional<infinicore::Tensor> block_tables,
-            std::optional<infinicore::Tensor> slot_mappin) const;
+            std::optional<infinicore::Tensor> slot_mappin,
+            std::optional<infinicore::Tensor> mate_workspace_buffer,
+            std::optional<infinicore::Tensor> mtt_tasks) const;
 
     /**
      * @brief Get the layer index

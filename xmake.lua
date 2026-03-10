@@ -2,6 +2,10 @@ add_requires("pybind11")
 
 local INFINI_ROOT = os.getenv("INFINI_ROOT") or (os.getenv(is_host("windows") and "HOMEPATH" or "HOME") .. "/.infini")
 
+local MUSA_ROOT = os.getenv("MUSA_ROOT") or os.getenv("MUSA_HOME") or os.getenv("MUSA_PATH")
+add_includedirs(MUSA_ROOT .. "/include")
+add_linkdirs(MUSA_ROOT .. "/lib")
+
 set_toolchains("gcc")
 
 -- Add spdlog from third_party directory

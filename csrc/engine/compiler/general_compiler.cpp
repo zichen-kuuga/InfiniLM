@@ -7,7 +7,7 @@ GeneralCompiler::GeneralCompiler(const std::shared_ptr<InfinilmModel> &model, Ra
 }
 
 void GeneralCompiler::compile() {
-    static_batching_compiler_->compile();
+    // static_batching_compiler_->compile();
     paged_compiler_->compile();
 }
 
@@ -15,10 +15,10 @@ GeneralCompiler::Compiled GeneralCompiler::get_compiled(const InfinilmModel::Inp
     GeneralCompiler::Compiled result = {nullptr, nullptr};
 
     // try each compiler, return the first valid result
-    result = static_batching_compiler_.get()->get_compiled(input);
-    if (std::get<0>(result) != nullptr && std::get<1>(result) != nullptr) {
-        return result;
-    }
+    // result = static_batching_compiler_.get()->get_compiled(input);
+    // if (std::get<0>(result) != nullptr && std::get<1>(result) != nullptr) {
+    //     return result;
+    // }
     result = paged_compiler_.get()->get_compiled(input);
     return result;
 }

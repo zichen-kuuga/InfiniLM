@@ -31,6 +31,9 @@ public:
         std::optional<infinicore::Tensor> block_tables;
         /// Slot ids for each token `[seq]`. Used for paged cache.
         std::optional<infinicore::Tensor> slot_mapping;
+
+        std::optional<infinicore::Tensor> mate_workspace_buffer;
+        std::optional<infinicore::Tensor> mtt_tasks;
     };
 
     struct Output {

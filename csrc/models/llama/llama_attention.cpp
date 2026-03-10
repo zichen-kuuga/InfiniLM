@@ -239,7 +239,9 @@ infinicore::Tensor LlamaAttention::forward_paged_(const infinicore::Tensor &hidd
                                                   std::optional<infinicore::Tensor> total_sequence_lengths,
                                                   std::optional<infinicore::Tensor> input_offsets,
                                                   std::optional<infinicore::Tensor> block_tables,
-                                                  std::optional<infinicore::Tensor> slot_mapping) const {
+                                                  std::optional<infinicore::Tensor> slot_mapping,
+                                                  std::optional<infinicore::Tensor> mate_workspace_buffer,
+                                                  std::optional<infinicore::Tensor> mtt_tasks) const {
     ASSERT(block_tables.has_value());
     ASSERT(slot_mapping.has_value());
 
@@ -298,6 +300,7 @@ infinicore::Tensor LlamaAttention::forward_paged_(const infinicore::Tensor &hidd
     infinicore::Tensor attn_output = infinicore::Tensor::empty({seq_len, num_attention_heads_, head_dim_}, q_reshaped->dtype(), q_reshaped->device());
 
     if (is_prefill) {
+        // auto q_flash = infinicore::op::rearrange(q_reshaped);
         infinicore::op::paged_attention_prefill_(
             attn_output,
             q_reshaped,
@@ -307,9 +310,32 @@ infinicore::Tensor LlamaAttention::forward_paged_(const infinicore::Tensor &hidd
             total_sequence_lengths.value(),
             input_offsets.value(),
             std::nullopt,
-            scaling_);
+            scaling_,
+            mtt_tasks.value());
 
     } else {
+        // auto q_flash = infinicore::op::rearrange(q_reshaped);
+        // if(layer_idx_ == 0){
+        //     // std::cout << "Layer " << layer_idx_ << std::endl;
+        //     // q_reshaped->debug();
+        //     q_debug.value()->copy_from(q_reshaped);
+        //     // std::cout << "Layer " << layer_idx_ << std::endl;
+        //     // k_total->debug();
+        //     k_debug.value() ->copy_from(k_total);
+        //     // std::cout << "Layer " << layer_idx_ << std::endl;
+        //     // v_total->debug();
+        //     v_debug.value()->copy_from(v_total);
+        //     // std::cout << "Layer " << layer_idx_ << std::endl;
+        //     // block_tables.value()->debug();
+        //     table_debug.value()->copy_from(block_tables.value());
+        //     // std::cout << "Layer " << layer_idx_ << std::endl;
+        //     // total_sequence_lengths.value()->debug();
+        //     seq_debug.value()->copy_from(total_sequence_lengths.value());
+        //     // std::cout << "Layer " << layer_idx_ << std::endl;
+        //     // mtt_tasks.value()->debug();
+        //     mtt_debug.value()->copy_from(mtt_tasks.value());
+        // }
+
         infinicore::op::paged_attention_(
             attn_output,
             q_reshaped,
@@ -318,7 +344,15 @@ infinicore::Tensor LlamaAttention::forward_paged_(const infinicore::Tensor &hidd
             block_tables.value(),
             total_sequence_lengths.value(),
             std::nullopt,
-            scaling_);
+            scaling_,
+            mtt_tasks.value(),
+            mate_workspace_buffer.value());
+        
+        // if(layer_idx_ == 0){
+        //     // std::cout << "Layer " << layer_idx_ << std::endl;
+        //     // attn_output->debug();
+        //     out_debug.value()->copy_from(attn_output);
+        // }
     }
 
     // 7. Project output
@@ -333,14 +367,16 @@ infinicore::Tensor LlamaAttention::forward(const infinicore::Tensor &hidden_stat
                                            std::optional<infinicore::Tensor> total_sequence_lengths,
                                            std::optional<infinicore::Tensor> input_offsets,
                                            std::optional<infinicore::Tensor> block_tables,
-                                           std::optional<infinicore::Tensor> slot_mapping) const {
+                                           std::optional<infinicore::Tensor> slot_mapping,
+                                           std::optional<infinicore::Tensor> mate_workspace_buffer,
+                                           std::optional<infinicore::Tensor> mtt_tasks) const {
     if (!rotary_emb_) {
         throw std::runtime_error("LlamaAttention: rotary_emb not configured");
     }
 
     infinicore::Tensor output;
     if (auto paged_kv_cache = std::dynamic_pointer_cast<cache::PagedKVCache>(kv_cache)) {
-        output = forward_paged_(hidden_states, position_ids, paged_kv_cache, total_sequence_lengths, input_offsets, block_tables, slot_mapping);
+        output = forward_paged_(hidden_states, position_ids, paged_kv_cache, total_sequence_lengths, input_offsets, block_tables, slot_mapping, mate_workspace_buffer, mtt_tasks);
     } else {
 
         output = forward_(hidden_states, position_ids, kv_cache, past_sequence_lengths, total_sequence_lengths);

@@ -4,6 +4,7 @@
 #include "infinicore/nn/rope.hpp"
 #include "infinicore/ops.hpp"
 #include <iostream>
+#include <typeinfo> 
 
 namespace infinilm::models::llama {
 /**
@@ -93,14 +94,51 @@ infinicore::Tensor LlamaModel::forward(const infinicore::Tensor &input_ids,
                                        std::optional<infinicore::Tensor> total_sequence_lengths,
                                        std::optional<infinicore::Tensor> input_offsets,
                                        std::optional<infinicore::Tensor> block_tables,
-                                       std::optional<infinicore::Tensor> slot_mapping) const {
-    // 1. Embed tokens: input_ids -> [batch, seq_len, hidden_size]
+                                       std::optional<infinicore::Tensor> slot_mapping,
+                                       std::optional<infinicore::Tensor> mate_workspace_buffer,
+                                       std::optional<infinicore::Tensor> mtt_tasks) const {
+
+    auto nh = model_config_->get<int>("num_attention_heads");
+    auto nkvh = model_config_->get<int>("num_key_value_heads");
+
     auto hidden_states = embed_tokens_->forward(input_ids);
+    auto stream = infinicore::context::getStream();
+
+    auto shape = hidden_states->shape();
+    int nreq = shape[0];
 
     // 2. Process through all decoder layers
     size_t num_layers = layers_.size();
     infinicore::Tensor residual;
     for (size_t i = 0; i < num_layers; ++i) {
+        if(i == 0){
+            if (auto paged_kv_cache = std::dynamic_pointer_cast<cache::PagedKVCache>(kv_cache_)){
+                auto shape = hidden_states->shape();
+                size_t seq_len = shape[1];
+                bool is_prefill = (seq_len != total_sequence_lengths.value()->shape()[0]);
+                if(is_prefill){
+                    infinicore::op::paged_attention_prefill_meta(
+                        input_offsets.value(),
+                        total_sequence_lengths.value(),
+                        mtt_tasks.value(),
+                        nreq,
+                        nh,
+                        nkvh,
+                        64
+                    );
+                }else{
+                    infinicore::op::paged_attention_decode_meta(
+                        input_offsets.value(),
+                        total_sequence_lengths.value(),
+                        mtt_tasks.value(),
+                        nreq,
+                        nh,
+                        nkvh,
+                        64
+                    );
+                }
+            }
+        }
         layers_.at(i)->forward(
             hidden_states,
             residual,
@@ -110,7 +148,9 @@ infinicore::Tensor LlamaModel::forward(const infinicore::Tensor &input_ids,
             total_sequence_lengths,
             input_offsets,
             block_tables,
-            slot_mapping);
+            slot_mapping,
+            mate_workspace_buffer,
+            mtt_tasks);
     }
 
     norm_->forward_inplace(hidden_states, residual);

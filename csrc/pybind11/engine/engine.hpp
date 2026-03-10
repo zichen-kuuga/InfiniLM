@@ -120,6 +120,8 @@ inline void bind_infer_engine(py::module &m) {
                          std::optional<infinicore::Tensor> input_offsets,
                          std::optional<infinicore::Tensor> block_tables,
                          std::optional<infinicore::Tensor> slot_mapping,
+                         std::optional<infinicore::Tensor> mate_workspace_buffer,
+                         std::optional<infinicore::Tensor> mtt_tasks,
                          py::kwargs kwargs) {
                 InferEngine::Input input{
                     std::move(input_ids),
@@ -129,6 +131,8 @@ inline void bind_infer_engine(py::module &m) {
                     std::move(input_offsets),
                     std::move(block_tables),
                     std::move(slot_mapping),
+                    std::move(mate_workspace_buffer),
+                    std::move(mtt_tasks),
                 };
 
                 // Explicit defaults
@@ -168,7 +172,9 @@ inline void bind_infer_engine(py::module &m) {
             py::arg("total_sequence_lengths") = std::nullopt,
             py::arg("input_offsets") = std::nullopt,
             py::arg("block_tables") = std::nullopt,
-            py::arg("slot_mapping") = std::nullopt)
+            py::arg("slot_mapping") = std::nullopt,
+            py::arg("mate_workspace_buffer") = std::nullopt,
+            py::arg("mtt_tasks") = std::nullopt)
         .def_readwrite("input_ids", &InferEngine::Input::input_ids)
         .def_readwrite("position_ids", &InferEngine::Input::position_ids)
         .def_readwrite("past_sequence_lengths", &InferEngine::Input::past_sequence_lengths)
@@ -176,6 +182,8 @@ inline void bind_infer_engine(py::module &m) {
         .def_readwrite("input_offsets", &InferEngine::Input::input_offsets)
         .def_readwrite("block_tables", &InferEngine::Input::block_tables)
         .def_readwrite("slot_mapping", &InferEngine::Input::slot_mapping)
+        .def_readwrite("mate_workspace_buffer", &InferEngine::Input::mate_workspace_buffer)
+        .def_readwrite("mtt_tasks", &InferEngine::Input::mtt_tasks)
         .def_readwrite("temperature", &InferEngine::Input::temperature)
         .def_readwrite("top_k", &InferEngine::Input::top_k)
         .def_readwrite("top_p", &InferEngine::Input::top_p);

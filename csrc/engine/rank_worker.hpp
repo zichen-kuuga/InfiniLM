@@ -44,6 +44,9 @@ public:
         /// Slot ids for each token `[seq]`. Used for paged cache.
         std::optional<infinicore::Tensor> slot_mapping;
 
+        std::optional<infinicore::Tensor> mate_workspace_buffer;
+        std::optional<infinicore::Tensor> mtt_tasks;
+
         float temperature{1};
 
         int top_k{50};

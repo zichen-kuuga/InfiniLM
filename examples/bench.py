@@ -357,6 +357,7 @@ class TestModel:
                 stop_on_eos=False,
             ),
             _measure_and_log_time=True,
+            paged_block_size=64,
         )
         t2 = time.time()
 
@@ -430,7 +431,7 @@ if __name__ == "__main__":
     #             测试
     # -------------------------------------------------------- #
     if enable_paged_attn:
-        paged_kv_block_size = 16
+        paged_kv_block_size = 64
         max_num_blocks = max(
             [
                 ((c_["input_len"] + c_["output_len"] + 15) // 16) * c_["batch_size"]
@@ -460,12 +461,12 @@ if __name__ == "__main__":
         warmup_cache_len = 128
         warmup_batch = len(test.input_ids_list)
 
-        test.model.reset_cache(
-            StaticKVCacheConfig(
-                max_batch_size=warmup_batch,
-                max_cache_len=warmup_cache_len,
-            )
-        )
+        # test.model.reset_cache(
+        #     StaticKVCacheConfig(
+        #         max_batch_size=warmup_batch,
+        #         max_cache_len=warmup_cache_len,
+        #     )
+        # )
 
         avg_prompt_len = min(64, max(len(ids) for ids in test.input_ids_list))
 
@@ -478,18 +479,19 @@ if __name__ == "__main__":
 
         print("=================== warmup start ===================")
 
-        for _ in range(warmup_steps):
-            _ = test.model.generate(
-                input_ids_infini,
-                GenerationConfig(
-                    max_new_tokens=5,  # decode kernel warmup
-                    temperature=args.temperature,
-                    top_k=args.top_k,
-                    top_p=args.top_p,
-                    stop_on_eos=False,
-                ),
-                _measure_and_log_time=False,
-            )
+        # for _ in range(warmup_steps):
+        #     _ = test.model.generate(
+        #         input_ids_infini,
+        #         GenerationConfig(
+        #             max_new_tokens=5,  # decode kernel warmup
+        #             temperature=args.temperature,
+        #             top_k=args.top_k,
+        #             top_p=args.top_p,
+        #             stop_on_eos=False,
+        #         ),
+        #         _measure_and_log_time=False,
+        #         paged_block_size=64,
+        #     )
 
         print("=================== warmup done ====================")
 

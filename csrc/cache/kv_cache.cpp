@@ -3,6 +3,7 @@
 #include "../utils.hpp"
 #include "infinicore/ops.hpp"
 #include <stdexcept>
+#include <musa_runtime.h>
 
 namespace infinilm::cache {
 // ==========================
@@ -180,6 +181,15 @@ PagedKVCache::PagedKVCache(
          v_dim_},
         dtype_,
         rank_info.device);
+    //置0
+    musaError_t err = musaMemset(k_caches_->data(), 0, k_caches_->nbytes());
+    if (err != musaSuccess) {
+        std::cerr << "init k caches failed" << std::endl;
+    }
+    err = musaMemset(v_caches_->data(), 0, v_caches_->nbytes());
+    if (err != musaSuccess) {
+        std::cerr << "init vk caches failed" << std::endl;
+    }
 }
 
 std::tuple<infinicore::Tensor, infinicore::Tensor> PagedKVCache::update(
