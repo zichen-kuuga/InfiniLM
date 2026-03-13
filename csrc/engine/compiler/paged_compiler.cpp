@@ -15,18 +15,18 @@ PagedCompiler::PagedCompiler(const std::shared_ptr<InfinilmModel> &model, RankBa
     for (size_t b = 1; b < 2; b++) {
         decode_batch_sizes_.push_back(b);
     }
-    // for (size_t b = 32; b < 64; b += 8) {
-    //     decode_batch_sizes_.push_back(b);
-    // }
-    // for (size_t b = 64; b < 128; b += 16) {
-    //     decode_batch_sizes_.push_back(b);
-    // }
-    // for (size_t b = 128; b < 256; b += 32) {
-    //     decode_batch_sizes_.push_back(b);
-    // }
-    // for (size_t b = 256; b <= 512; b += 64) {
-    //     decode_batch_sizes_.push_back(b);
-    // }
+    for (size_t b = 32; b < 64; b += 8) {
+        decode_batch_sizes_.push_back(b);
+    }
+    for (size_t b = 64; b < 128; b += 16) {
+        decode_batch_sizes_.push_back(b);
+    }
+    for (size_t b = 128; b < 256; b += 32) {
+        decode_batch_sizes_.push_back(b);
+    }
+    for (size_t b = 256; b <= 512; b += 64) {
+        decode_batch_sizes_.push_back(b);
+    }
 }
 
 void PagedCompiler::compile() {
@@ -60,24 +60,8 @@ void PagedCompiler::compile() {
             set_zeros(input.slot_mapping.value());
 
             input.mate_workspace_buffer = infinicore::Tensor::empty({128 * 1024 * 1024}, infinicore::DataType::U8, infinicore::context::getDevice());
-            musaError_t err = musaMemset(input.mate_workspace_buffer.value()->data(), 0, input.mate_workspace_buffer.value()->nbytes());
-            if (err != musaSuccess) {
-                std::cerr << "init mate workspace buffer failed" << std::endl;
-            }
 
             input.mtt_tasks = infinicore::Tensor::empty({16000}, infinicore::DataType::I32, infinicore::context::getDevice());
-            err = musaMemset(input.mtt_tasks.value()->data(), 0, input.mtt_tasks.value()->nbytes());
-            if (err != musaSuccess) {
-                std::cerr << "init mtt tasks failed" << std::endl;
-            }
-
-            // input.q_debug = infinicore::Tensor::empty({1, 32, 128}, infinicore::DataType::BF16, infinicore::context::getDevice());
-            // input.k_debug = infinicore::Tensor::empty({3, 2, 64, 128}, infinicore::DataType::BF16, infinicore::context::getDevice());
-            // input.v_debug = infinicore::Tensor::empty({3, 2, 64, 128}, infinicore::DataType::BF16, infinicore::context::getDevice());
-            // input.table_debug = infinicore::Tensor::empty({1, 3}, infinicore::DataType::I32, infinicore::context::getDevice());
-            // input.seq_debug = infinicore::Tensor::empty({1}, infinicore::DataType::I32, infinicore::context::getDevice());
-            // input.mtt_debug = infinicore::Tensor::empty({16000}, infinicore::DataType::I32, infinicore::context::getDevice());
-            // input.out_debug = infinicore::Tensor::empty({1, 32, 128}, infinicore::DataType::BF16, infinicore::context::getDevice());
             barrier_->wait();
             infinicore::context::startGraphRecording();
             auto output = model_->forward(input);
@@ -86,11 +70,6 @@ void PagedCompiler::compile() {
 
             auto shared_output = std::shared_ptr<InfinilmModel::Output>(
                 new InfinilmModel::Output{infinicore::graph::GraphTensor(output.logits)});
-            
-            // err = musaMemset(shared_output->logits->data(), 0, shared_output->logits->nbytes());
-            // if (err != musaSuccess) {
-            //     std::cerr << "init shared output failed" << std::endl;
-            // }
 
             compiled_map_decode_[b] = CompiledResult{std::move(input), std::make_tuple(graph, shared_output)};
         }
@@ -111,20 +90,13 @@ PagedCompiler::Compiled PagedCompiler::get_compiled(const InfinilmModel::Input &
                 return {nullptr, nullptr};
             }
             auto &graph_input = result->second.input;
-            // graph_input.mtt_tasks.value()->debug();
-            // graph_input.q_debug.value()->debug();
-            // graph_input.k_debug.value()->debug();
-            // graph_input.v_debug.value()->debug();
-            // graph_input.table_debug.value()->debug();
-            // graph_input.seq_debug.value()->debug();
-            // graph_input.mtt_debug.value()->debug();
-            // graph_input.out_debug.value()->debug();
 
             graph_input.input_ids.value()->copy_from(input.input_ids.value());
             graph_input.position_ids.value()->copy_from(input.position_ids.value());
             graph_input.total_sequence_lengths.value()->copy_from(input.total_sequence_lengths.value());
             graph_input.input_offsets.value()->copy_from(input.input_offsets.value());
             graph_input.block_tables.value()->narrow({{1, 0, block_per_req}})->copy_from(input.block_tables.value());
+            graph_input.slot_mapping.value()->copy_from(input.slot_mapping.value());
             graph_input.mate_workspace_buffer.value()->copy_from(input.mate_workspace_buffer.value());
             graph_input.mtt_tasks.value()->copy_from(input.mtt_tasks.value());
 

@@ -111,11 +111,6 @@ InferEngine::Input::to_model_input(infinicore::Device device) const {
         return t.has_value() ? t.value()->to(device) : t;
     };
 
-    // static std::optional<infinicore::Tensor> cached_mate_workspace = 
-    //     to_device(mate_workspace_buffer);
-    // static std::optional<infinicore::Tensor> cached_mtt_tasks = 
-    //     to_device(mtt_tasks);
-
     return {
         to_device(input_ids), // @todo: on device in the future
         to_device(position_ids),
@@ -126,8 +121,6 @@ InferEngine::Input::to_model_input(infinicore::Device device) const {
         to_device(slot_mapping),
         to_device(mate_workspace_buffer),
         to_device(mtt_tasks),
-        // cached_mate_workspace,
-        // cached_mtt_tasks,
     };
 }
 

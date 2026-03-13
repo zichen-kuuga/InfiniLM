@@ -59,7 +59,7 @@ class InfiniLMBenchmark(BaseBenchmark):
         from infinilm.infer_engine import InferEngine
 
         self.benchmark = benchmark
-
+        self.enable_paged_attn = enable_paged_attn
         # Map device type string to infinicore device
         # Note: These map to the Python device type strings used by infinicore.device()
         # which correspond to _TORCH_DEVICE_MAP values in InfiniCore/python/infinicore/device.py
@@ -198,9 +198,8 @@ class InfiniLMBenchmark(BaseBenchmark):
             batch_size = input_ids.shape[0]
             seq_len = input_ids.shape[1]
             max_cache_len = max_steps + seq_len
-            self.model.reset_cache(
-                batch_size=batch_size, initial_capacity=max_cache_len
-            )
+            from infinilm.cache import StaticKVCacheConfig, PagedKVCacheConfig
+            self.model.reset_cache(PagedKVCacheConfig(128,64) if self.enable_paged_attn else StaticKVCacheConfig())
 
         # Use model's built-in generate() method which properly handles KV cache
         # Pass sampling parameters (temperature, topk, topp) via kwargs

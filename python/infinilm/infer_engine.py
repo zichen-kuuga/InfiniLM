@@ -55,6 +55,7 @@ class InferEngine(_infinilm.InferEngine):
         self.enable_paged_attn = isinstance(cache_config, PagedKVCacheConfig)
         self.mate_workspace_buffer = infinicore.from_list([0]*(128 * 1024 * 1024), dtype=infinicore.uint8)
         # self.mtt_tasks = infinicore.from_list([0]*(16000), dtype=infinicore.uint32)
+        # self.mate_workspace_buffer = infinicore.from_list([0]*(32000*8), dtype=infinicore.int32)
         self.mtt_tasks = infinicore.from_list([0]*(16000), dtype=infinicore.int32)
 
     def __call__(self, *args, **kwargs):
@@ -212,7 +213,6 @@ class InferEngine(_infinilm.InferEngine):
             )
 
             input_offsets = infinicore.from_list(
-                # [seq_len * i for i in range(batch_size + 1)], dtype=infinicore.uint32
                 [seq_len * i for i in range(batch_size + 1)], dtype=infinicore.int32
             )
 

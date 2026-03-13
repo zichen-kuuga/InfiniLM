@@ -432,12 +432,13 @@ if __name__ == "__main__":
     # -------------------------------------------------------- #
     if enable_paged_attn:
         paged_kv_block_size = 64
-        max_num_blocks = max(
-            [
-                ((c_["input_len"] + c_["output_len"] + 15) // 16) * c_["batch_size"]
-                for _, c_ in cases_dict.items()
-            ]
-        )
+        # max_num_blocks = max(
+        #     [
+        #         ((c_["input_len"] + c_["output_len"] + 15) // 64 + 1) * c_["batch_size"]
+        #         for _, c_ in cases_dict.items()
+        #     ]
+        # )
+        max_num_blocks=128
         cache_config = PagedKVCacheConfig(max_num_blocks, paged_kv_block_size)
     else:
         cache_config = None
@@ -479,25 +480,25 @@ if __name__ == "__main__":
 
         print("=================== warmup start ===================")
 
-        # for _ in range(warmup_steps):
-        #     _ = test.model.generate(
-        #         input_ids_infini,
-        #         GenerationConfig(
-        #             max_new_tokens=5,  # decode kernel warmup
-        #             temperature=args.temperature,
-        #             top_k=args.top_k,
-        #             top_p=args.top_p,
-        #             stop_on_eos=False,
-        #         ),
-        #         _measure_and_log_time=False,
-        #         paged_block_size=64,
-        #     )
+        for _ in range(warmup_steps):
+            _ = test.model.generate(
+                input_ids_infini,
+                GenerationConfig(
+                    max_new_tokens=5,  # decode kernel warmup
+                    temperature=args.temperature,
+                    top_k=args.top_k,
+                    top_p=args.top_p,
+                    stop_on_eos=False,
+                ),
+                _measure_and_log_time=False,
+                paged_block_size=64,
+            )
 
         print("=================== warmup done ====================")
 
         # reset cache back to benchmark config
-        if cache_config is not None:
-            test.model.reset_cache(cache_config)
+        # if cache_config is not None:
+        #     test.model.reset_cache(cache_config)
 
     # ---------------------------------------------------------------------------- #
     #                                Warmup done

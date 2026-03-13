@@ -298,9 +298,8 @@ infinicore::Tensor LlamaAttention::forward_paged_(const infinicore::Tensor &hidd
 
     // 6. Compute attention
     infinicore::Tensor attn_output = infinicore::Tensor::empty({seq_len, num_attention_heads_, head_dim_}, q_reshaped->dtype(), q_reshaped->device());
-
+    float rln2_scale = scaling_ * std::log2(M_E);
     if (is_prefill) {
-        // auto q_flash = infinicore::op::rearrange(q_reshaped);
         infinicore::op::paged_attention_prefill_(
             attn_output,
             q_reshaped,
@@ -310,32 +309,10 @@ infinicore::Tensor LlamaAttention::forward_paged_(const infinicore::Tensor &hidd
             total_sequence_lengths.value(),
             input_offsets.value(),
             std::nullopt,
-            scaling_,
+            rln2_scale,
             mtt_tasks.value());
 
     } else {
-        // auto q_flash = infinicore::op::rearrange(q_reshaped);
-        // if(layer_idx_ == 0){
-        //     // std::cout << "Layer " << layer_idx_ << std::endl;
-        //     // q_reshaped->debug();
-        //     q_debug.value()->copy_from(q_reshaped);
-        //     // std::cout << "Layer " << layer_idx_ << std::endl;
-        //     // k_total->debug();
-        //     k_debug.value() ->copy_from(k_total);
-        //     // std::cout << "Layer " << layer_idx_ << std::endl;
-        //     // v_total->debug();
-        //     v_debug.value()->copy_from(v_total);
-        //     // std::cout << "Layer " << layer_idx_ << std::endl;
-        //     // block_tables.value()->debug();
-        //     table_debug.value()->copy_from(block_tables.value());
-        //     // std::cout << "Layer " << layer_idx_ << std::endl;
-        //     // total_sequence_lengths.value()->debug();
-        //     seq_debug.value()->copy_from(total_sequence_lengths.value());
-        //     // std::cout << "Layer " << layer_idx_ << std::endl;
-        //     // mtt_tasks.value()->debug();
-        //     mtt_debug.value()->copy_from(mtt_tasks.value());
-        // }
-
         infinicore::op::paged_attention_(
             attn_output,
             q_reshaped,
@@ -344,15 +321,9 @@ infinicore::Tensor LlamaAttention::forward_paged_(const infinicore::Tensor &hidd
             block_tables.value(),
             total_sequence_lengths.value(),
             std::nullopt,
-            scaling_,
+            rln2_scale,
             mtt_tasks.value(),
             mate_workspace_buffer.value());
-        
-        // if(layer_idx_ == 0){
-        //     // std::cout << "Layer " << layer_idx_ << std::endl;
-        //     // attn_output->debug();
-        //     out_debug.value()->copy_from(attn_output);
-        // }
     }
 
     // 7. Project output
