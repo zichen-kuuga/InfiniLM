@@ -299,6 +299,31 @@ infinicore::Tensor LlamaAttention::forward_paged_(const infinicore::Tensor &hidd
     // 6. Compute attention
     infinicore::Tensor attn_output = infinicore::Tensor::empty({seq_len, num_attention_heads_, head_dim_}, q_reshaped->dtype(), q_reshaped->device());
     float rln2_scale = scaling_ * std::log2(M_E);
+
+    if(layer_idx_ == 0){
+        if(is_prefill){
+            infinicore::op::paged_attention_prefill_meta(
+                input_offsets.value(),
+                total_sequence_lengths.value(),
+                mtt_tasks.value(),
+                batch_size,
+                q_reshaped->shape()[1],
+                k_total->shape()[1],
+                64
+            );
+        }else{
+            infinicore::op::paged_attention_decode_meta(
+                input_offsets.value(),
+                total_sequence_lengths.value(),
+                mtt_tasks.value(),
+                batch_size,
+                q_reshaped->shape()[1],
+                k_total->shape()[1],
+                64
+            );
+        }
+    }
+
     if (is_prefill) {
         infinicore::op::paged_attention_prefill_(
             attn_output,

@@ -432,13 +432,13 @@ if __name__ == "__main__":
     # -------------------------------------------------------- #
     if enable_paged_attn:
         paged_kv_block_size = 64
-        # max_num_blocks = max(
-        #     [
-        #         ((c_["input_len"] + c_["output_len"] + 15) // 64 + 1) * c_["batch_size"]
-        #         for _, c_ in cases_dict.items()
-        #     ]
-        # )
-        max_num_blocks=128
+        max_num_blocks = max(
+            [
+                ((c_["input_len"] + c_["output_len"] + 63) // 64) * c_["batch_size"]
+                for _, c_ in cases_dict.items()
+            ]
+        )
+        # max_num_blocks=128
         cache_config = PagedKVCacheConfig(max_num_blocks, paged_kv_block_size)
     else:
         cache_config = None

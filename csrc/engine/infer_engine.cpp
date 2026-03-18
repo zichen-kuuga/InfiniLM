@@ -1,6 +1,7 @@
 #include "infer_engine.hpp"
 #include "spdlog/spdlog.h"
 #include <iostream>
+#include <unordered_map>
 namespace infinilm::engine {
 
 //------------------------------------------------------
@@ -110,7 +111,29 @@ InferEngine::Input::to_model_input(infinicore::Device device) const {
         -> std::optional<infinicore::Tensor> {
         return t.has_value() ? t.value()->to(device) : t;
     };
-
+    
+    static std::map<size_t, std::optional<infinicore::Tensor>> cached_mate_workspace_map;
+    static std::map<size_t, std::optional<infinicore::Tensor>> cached_mtt_tasks_map;
+    
+    auto get_cached_tensor = [&](
+        const std::optional<infinicore::Tensor>& source_tensor,
+        std::map<size_t, std::optional<infinicore::Tensor>>& cache_map,
+        size_t target_device) {
+        
+        if (!source_tensor.has_value()) {
+            return source_tensor;
+        }
+        
+        auto it = cache_map.find(target_device);
+        if (it != cache_map.end()) {
+            return it->second;
+        }
+        
+        auto device_tensor = to_device(source_tensor);
+        cache_map[target_device] = device_tensor;
+        return device_tensor;
+    };
+    
     return {
         to_device(input_ids), // @todo: on device in the future
         to_device(position_ids),
@@ -119,8 +142,8 @@ InferEngine::Input::to_model_input(infinicore::Device device) const {
         to_device(input_offsets),
         to_device(block_tables),
         to_device(slot_mapping),
-        to_device(mate_workspace_buffer),
-        to_device(mtt_tasks),
+        get_cached_tensor(mate_workspace_buffer, cached_mate_workspace_map, device.getIndex()),
+        get_cached_tensor(mtt_tasks, cached_mtt_tasks_map, device.getIndex()),
     };
 }
 

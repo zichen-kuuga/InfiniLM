@@ -98,47 +98,17 @@ infinicore::Tensor LlamaModel::forward(const infinicore::Tensor &input_ids,
                                        std::optional<infinicore::Tensor> mate_workspace_buffer,
                                        std::optional<infinicore::Tensor> mtt_tasks) const {
 
-    auto nh = model_config_->get<int>("num_attention_heads");
-    auto nkvh = model_config_->get<int>("num_key_value_heads");
+    // auto nh = model_config_->get<int>("num_attention_heads");
+    // auto nkvh = model_config_->get<int>("num_key_value_heads");
+    // std::cout << "nkvh: " << nkvh << ", nh: " << nh << std::endl;
 
     auto hidden_states = embed_tokens_->forward(input_ids);
-    auto stream = infinicore::context::getStream();
-
-    auto shape = hidden_states->shape();
-    int nreq = shape[0];
+    // std::cout << "hidden_states: " << hidden_states->info() << std::endl;
 
     // 2. Process through all decoder layers
     size_t num_layers = layers_.size();
     infinicore::Tensor residual;
     for (size_t i = 0; i < num_layers; ++i) {
-        if(i == 0){
-            if (auto paged_kv_cache = std::dynamic_pointer_cast<cache::PagedKVCache>(kv_cache_)){
-                auto shape = hidden_states->shape();
-                size_t seq_len = shape[1];
-                bool is_prefill = (seq_len != total_sequence_lengths.value()->shape()[0]);
-                if(is_prefill){
-                    infinicore::op::paged_attention_prefill_meta(
-                        input_offsets.value(),
-                        total_sequence_lengths.value(),
-                        mtt_tasks.value(),
-                        nreq,
-                        nh,
-                        nkvh,
-                        64
-                    );
-                }else{
-                    infinicore::op::paged_attention_decode_meta(
-                        input_offsets.value(),
-                        total_sequence_lengths.value(),
-                        mtt_tasks.value(),
-                        nreq,
-                        nh,
-                        nkvh,
-                        64
-                    );
-                }
-            }
-        }
         layers_.at(i)->forward(
             hidden_states,
             residual,
